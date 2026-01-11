@@ -19,9 +19,10 @@ import (
 var sampleConfig string
 
 type Nftables struct {
-	UseSudo bool     `toml:"use_sudo"`
-	Binary  string   `toml:"binary"`
-	Tables  []string `toml:"tables"`
+	UseSudo           bool     `toml:"use_sudo"`
+	Binary            string   `toml:"binary"`
+	Tables            []string `toml:"tables"`
+	AnonymousCounters *bool    `toml:"anonymous_counters"`
 
 	args []string
 }
@@ -79,33 +80,49 @@ func (n *Nftables) gatherTable(acc telegraf.Accumulator, name string) error {
 	if err := json.Unmarshal(out, &nftable); err != nil {
 		return fmt.Errorf("parsing command output failed: %w", err)
 	}
-	for _, rule := range nftable.Rules {
-		if len(rule.Comment) == 0 {
-			continue
-		}
-		for _, expr := range rule.Exprs {
-			if expr.Cntr == nil {
+	if n.AnonymousCounters == nil || *n.AnonymousCounters {
+		for _, rule := range nftable.Rules {
+			if len(rule.Comment) == 0 {
 				continue
 			}
-			fields := map[string]interface{}{
-				"bytes": expr.Cntr.Bytes,
-				"pkts":  expr.Cntr.Packets,
+			for _, expr := range rule.Exprs {
+				if expr.Cntr == nil {
+					continue
+				}
+				fields := map[string]interface{}{
+					"bytes": expr.Cntr.Bytes,
+					"pkts":  expr.Cntr.Packets,
+				}
+				tags := map[string]string{
+					"table":  rule.Table,
+					"family": rule.Family,
+					"chain":  rule.Chain,
+					"rule":   rule.Comment,
+				}
+				acc.AddFields("nftables", fields, tags)
 			}
-			tags := map[string]string{
-				"table": rule.Table,
-				"chain": rule.Chain,
-				"rule":  rule.Comment,
-			}
-			acc.AddFields("nftables", fields, tags)
 		}
+	}
+	for _, counter := range nftable.Counters {
+		fields := map[string]interface{}{
+			"bytes": counter.Bytes,
+			"pkts":  counter.Packets,
+		}
+		tags := map[string]string{
+			"table":   counter.Table,
+			"family":  counter.Family,
+			"counter": counter.Name,
+		}
+		acc.AddFields("nftables", fields, tags)
 	}
 	for _, set := range nftable.Sets {
 		fields := map[string]interface{}{
 			"count": len(set.Elem),
 		}
 		tags := map[string]string{
-			"table": set.Table,
-			"set":   set.Name,
+			"table":  set.Table,
+			"family": set.Family,
+			"set":    set.Name,
 		}
 		acc.AddFields("nftables", fields, tags)
 	}

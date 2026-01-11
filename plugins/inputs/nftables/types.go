@@ -10,7 +10,8 @@ import (
 type table struct {
 	Metainfo          *metainfo
 	Rules             []*rule
-	Sets              []*set
+	Counters          []*named_counter
+	Sets              []*named_set
 	JSONSchemaVersion int `json:"json_schema_version"`
 }
 
@@ -37,8 +38,14 @@ func (nftable *table) UnmarshalJSON(b []byte) error {
 				return fmt.Errorf("unable to parse rule: %w", err)
 			}
 			nftable.Rules = append(nftable.Rules, &r)
+		} else if _, found := nfthing["counter"]; found {
+			var c named_counter
+			if err := json.Unmarshal(nfthing["counter"], &c); err != nil {
+				return fmt.Errorf("unable to parse counter: %w", err)
+			}
+			nftable.Counters = append(nftable.Counters, &c)
 		} else if _, found := nfthing["set"]; found {
-			var s set
+			var s named_set
 			if err := json.Unmarshal(nfthing["set"], &s); err != nil {
 				return fmt.Errorf("unable to parse set: %w", err)
 			}
@@ -62,7 +69,7 @@ type rule struct {
 }
 
 type expr struct {
-	Cntr *counter `json:"counter,omitempty"`
+	Cntr *anon_counter `json:"counter,omitempty"`
 }
 
 // UnmarshalJSON handles both anonymous counters (objects with packets/bytes)
@@ -86,7 +93,7 @@ func (e *expr) UnmarshalJSON(b []byte) error {
 			return nil
 		}
 		// Anonymous counter - parse the object
-		var c counter
+		var c anon_counter
 		if err := json.Unmarshal(raw.Counter, &c); err != nil {
 			return err
 		}
@@ -96,12 +103,20 @@ func (e *expr) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-type counter struct {
+type anon_counter struct {
 	Packets int64 `json:"packets"`
 	Bytes   int64 `json:"bytes"`
 }
 
-type set struct {
+type named_counter struct {
+	Family  string `json:"family"`
+	Name    string `json:"name"`
+	Table   string `json:"table"`
+	Packets int64  `json:"packets"`
+	Bytes   int64  `json:"bytes"`
+}
+
+type named_set struct {
 	Family string `json:"family"`
 	Name   string `json:"name"`
 	Table  string `json:"table"`
